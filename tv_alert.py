@@ -1,8 +1,11 @@
 import requests
-from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
+from datetime import datetime
 
 BOT_TOKEN = "8685078633:AAF46dqI3-SWkUWDEQb21yb8YPfgm4VfpUA"
 CHAT_ID = "38908105"
+
+XMLTV_URL = "https://epg.pw/xmltv/epg_RU.xml"
 
 PROGRAMS = [
     "Клара Румянова. Звезда за кадром",
@@ -10,6 +13,12 @@ PROGRAMS = [
     "Перо и шпага Валентина Пикуля",
     "Эдуард Хиль - Сто хитов короля эстрады",
     "Гоголь и ляхи",
+    "Кремлёвские похороны. Лаврентий Берия",
+    "Сеанс с Кашпировским",
+    "Тайны сновидений",
+    "Экстрасенсы",
+    "Сумасшествие",
+    "Оборотни",
     "Волльвебер. Личный враг Гитлера",
     "Спето в СССР. Госпожа удача",
     "Сталин и писатели",
@@ -33,32 +42,8 @@ PROGRAMS = [
     "Вначале было дело или История русской промышленности",
 ]
 
-CHANNELS = [
-    "Культура",
-    "Первый канал",
-    "Россия 1",
-    "Россия",
-    "НТВ",
-    "ТВ Центр",
-    "Пятый канал",
-    "РЕН ТВ",
-    "Звезда",
-    "Мир",
-    "ОТР",
-    "Россия 24",
-    "Победа",
-    "Дом кино",
-    "Время",
-    "Москва 24",
-    "Санкт-Петербург",
-    "78",
-    "ГТРК",
-    "Вести",
-    "Регион",
-]
-
-SEARCH_URL = "https://tv.yandex.ru/search?text="
-
+def normalize(text):
+    return (text or "").lower().replace("ё", "е").replace(".", "").replace(",", "").strip()
 
 def send_telegram(text):
     r = requests.post(
@@ -69,38 +54,47 @@ def send_telegram(text):
     print("STATUS:", r.status_code)
     print("RESPONSE:", r.text)
 
-
-def check_program(title):
-    url = SEARCH_URL + requests.utils.quote(title)
-    html = requests.get(
-        url,
-        headers={"User-Agent": "Mozilla/5.0"},
-        timeout=20
-    ).text
-
-    text = BeautifulSoup(html, "html.parser").get_text(" ", strip=True)
-
-    found_channel = next((ch for ch in CHANNELS if ch in text), None)
-
-    if found_channel:
-        return f"Найден возможный эфир:\n«{title}»\nКанал: {found_channel}\n{url}"
-
-    return None
-
+def parse_time(value):
+    # XMLTV time format: 20260425090000 +0300
+    if not value:
+        return "время не указано"
+    return datetime.strptime(value[:14], "%Y%m%d%H%M%S").strftime("%d.%m.%Y %H:%M")
 
 def main():
-    results = []
+    xml_text = requests.get(XMLTV_URL, timeout=60).text
+    root = ET.fromstring(xml_text)
 
-    for title in PROGRAMS:
-        result = check_program(title)
-        if result:
-            results.append(result)
+    found = []
 
-    if results:
-        send_telegram("\n\n---\n\n".join(results))
+    targets = [(title, normalize(title)) for title in PROGRAMS]
+
+    for item in root.findall("programme"):
+        title_el = item.find("title")
+        if title_el is None or not title_el.text:
+            continue
+
+        tv_title = title_el.text
+        tv_title_norm = normalize(tv_title)
+
+        for original_title, target_norm in targets:
+            if target_norm in tv_title_norm or tv_title_norm in target_norm:
+                channel = item.attrib.get("channel", "канал не указан")
+                start = parse_time(item.attrib.get("start"))
+                stop = parse_time(item.attrib.get("stop"))
+
+                found.append(
+                    f"Найден эфир:\n"
+                    f"«{tv_title}»\n"
+                    f"Искали: «{original_title}»\n"
+                    f"Канал: {channel}\n"
+                    f"Начало: {start}\n"
+                    f"Конец: {stop}"
+                )
+
+    if found:
+        send_telegram("\n\n---\n\n".join(found[:20]))
     else:
         print("Эфиров пока не найдено.")
-
 
 if __name__ == "__main__":
     main()
