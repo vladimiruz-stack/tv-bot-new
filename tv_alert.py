@@ -77,7 +77,7 @@ def main():
         tv_title_norm = normalize(tv_title)
 
         for original_title, target_norm in targets:
-            if target_norm in tv_title_norm or tv_title_norm in target_norm:
+            if target_norm == tv_title_norm:
                 channel = item.attrib.get("channel", "канал не указан")
                 start = parse_time(item.attrib.get("start"))
                 stop = parse_time(item.attrib.get("stop"))
