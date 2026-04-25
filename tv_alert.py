@@ -13,12 +13,6 @@ PROGRAMS = [
     "Перо и шпага Валентина Пикуля",
     "Эдуард Хиль - Сто хитов короля эстрады",
     "Гоголь и ляхи",
-    "Кремлёвские похороны. Лаврентий Берия",
-    "Сеанс с Кашпировским",
-    "Тайны сновидений",
-    "Экстрасенсы",
-    "Сумасшествие",
-    "Оборотни",
     "Волльвебер. Личный враг Гитлера",
     "Спето в СССР. Госпожа удача",
     "Сталин и писатели",
@@ -55,7 +49,6 @@ def send_telegram(text):
     print("RESPONSE:", r.text)
 
 def parse_time(value):
-    # XMLTV time format: 20260425090000 +0300
     if not value:
         return "время не указано"
     return datetime.strptime(value[:14], "%Y%m%d%H%M%S").strftime("%d.%m.%Y %H:%M")
@@ -64,8 +57,14 @@ def main():
     xml_text = requests.get(XMLTV_URL, timeout=60).text
     root = ET.fromstring(xml_text)
 
-    found = []
+    channel_map = {}
+    for ch in root.findall("channel"):
+        ch_id = ch.attrib.get("id")
+        name_el = ch.find("display-name")
+        if ch_id and name_el is not None and name_el.text:
+            channel_map[ch_id] = name_el.text
 
+    found = []
     targets = [(title, normalize(title)) for title in PROGRAMS]
 
     for item in root.findall("programme"):
@@ -78,14 +77,15 @@ def main():
 
         for original_title, target_norm in targets:
             if target_norm == tv_title_norm:
-                channel = item.attrib.get("channel", "канал не указан")
+                channel_id = item.attrib.get("channel", "канал не указан")
+                channel = channel_map.get(channel_id, channel_id)
+
                 start = parse_time(item.attrib.get("start"))
                 stop = parse_time(item.attrib.get("stop"))
 
                 found.append(
                     f"Найден эфир:\n"
                     f"«{tv_title}»\n"
-                    f"Искали: «{original_title}»\n"
                     f"Канал: {channel}\n"
                     f"Начало: {start}\n"
                     f"Конец: {stop}"
